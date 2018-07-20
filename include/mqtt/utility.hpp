@@ -8,6 +8,7 @@
 #define MQTT_UTILITY_HPP
 
 #include <utility>
+#include <memory>
 
 #if __cplusplus >= 201402L
 #define MQTT_CAPTURE_FORWARD(T, v) v = std::forward<T>(v)
@@ -89,5 +90,21 @@ using basic_string_view = boost::basic_string_view<CharT, Traits>;
 } // namespace mqtt
 
 #endif // __cplusplus >= 201703L
+
+// is_shared_ptr
+
+namespace mqtt {
+
+template <typename T>
+struct is_shared_ptr {
+    static constexpr bool value = false;
+};
+
+template <typename T>
+struct is_shared_ptr<std::shared_ptr<T>> {
+    static constexpr bool value = true;
+};
+
+} // namespace mqtt
 
 #endif // MQTT_UTILITY_HPP

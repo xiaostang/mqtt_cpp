@@ -7,6 +7,8 @@
 #if !defined(MQTT_ENDPOINT_HPP)
 #define MQTT_ENDPOINT_HPP
 
+#include <mqtt/variant.hpp> // should be top to configure variant limit
+
 #include <string>
 #include <vector>
 #include <deque>
@@ -48,6 +50,9 @@
 #include <mqtt/two_byte_util.hpp>
 #include <mqtt/four_byte_util.hpp>
 #include <mqtt/packet_id_type.hpp>
+#include <mqtt/property_variant.hpp>
+#include <mqtt/property_parse.hpp>
+#include <mqtt/protocol_version.hpp>
 
 #if defined(MQTT_USE_WS)
 #include <mqtt/ws_endpoint.hpp>
@@ -108,22 +113,26 @@ public:
          )
     {}
 
-    /**
-     * @brief Close handler
-     *
-     * This handler is called if the client called `disconnect()` and the server closed the socket cleanly.
-     * If the socket is closed by other reasons, error_handler is called.
-     */
-    using close_handler = std::function<void()>;
+    // MQTT Common handlers
 
     /**
-     * @brief Error handler
-     *
-     * This handler is called if the socket is closed without client's `disconnect()` call.
-     *
-     * @param ec error code
+     * @brief Pingreq handler
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718081<BR>
+     *        3.13 PINGREQ – PING request
+     * @return if the handler returns true, then continue receiving, otherwise quit.
      */
-    using error_handler = std::function<void(boost::system::error_code const& ec)>;
+    using pingreq_handler = std::function<bool()>;
+
+    /**
+     * @brief Pingresp handler
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718086<BR>
+     *        3.13 PINGRESP – PING response
+     * @return if the handler returns true, then continue receiving, otherwise quit.
+     */
+    using pingresp_handler = std::function<bool()>;
+
+
+    // MQTT v3_1_1 handlers
 
     /**
      * @brief Connect handler
@@ -247,16 +256,6 @@ public:
     using pubcomp_handler = std::function<bool(packet_id_t packet_id)>;
 
     /**
-     * @brief Publish response sent handler
-     *        This function is called just after puback sent on QoS1, or pubcomp sent on QoS2.
-     * @param packet_id
-     *        packet identifier<BR>
-     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718060<BR>
-     *        3.7.2 Variable header
-     */
-    using pub_res_sent_handler = std::function<void(packet_id_t packet_id)>;
-
-    /**
      * @brief Subscribe handler
      * @param packet_id packet identifier<BR>
      *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349801<BR>
@@ -306,27 +305,312 @@ public:
     using unsuback_handler = std::function<bool(packet_id_t)>;
 
     /**
-     * @brief Pingreq handler
-     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718081<BR>
-     *        3.13 PINGREQ – PING request
-     * @return if the handler returns true, then continue receiving, otherwise quit.
-     */
-    using pingreq_handler = std::function<bool()>;
-
-    /**
-     * @brief Pingresp handler
-     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718086<BR>
-     *        3.13 PINGRESP – PING response
-     * @return if the handler returns true, then continue receiving, otherwise quit.
-     */
-    using pingresp_handler = std::function<bool()>;
-
-    /**
      * @brief Disconnect handler
      *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc384800463<BR>
      *        3.14 DISCONNECT – Disconnect notification
      */
     using disconnect_handler = std::function<void()>;
+
+    // MQTT v5 handlers
+
+    /**
+     * @brief Connect handler
+     * @param client_id
+     *        User Name.<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349245<BR>
+     *        3.1.3.4 User Name
+     * @param username
+     *        User Name.<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349245<BR>
+     *        3.1.3.4 User Name
+     * @param password
+     *        Password.<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349246<BR>
+     *        3.1.3.5 Password
+     * @param will
+     *        Will. It contains retain, QoS, topic, and message.<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349232<BR>
+     *        3.1.2.5 Will Flag<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349233<BR>
+     *        3.1.2.6 Will QoS<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349234<BR>
+     *        3.1.2.7 Will Retain<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349243<BR>
+     *        3.1.3.2 Will Topic<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349244<BR>
+     *        3.1.3.3 Will Message<BR>
+     * @param clean_session
+     *        Clean Session<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349231<BR>
+     *        3.1.2.4 Clean Session
+     * @param keep_alive
+     *        Keep Alive<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349237<BR>
+     *        3.1.2.10 Keep Alive
+     * @param props
+     *        Properties
+     * @return if the handler returns true, then continue receiving, otherwise quit.
+     *
+     */
+    using v5_connect_handler = std::function<
+        bool(std::string const& client_id,
+             boost::optional<std::string> const& username,
+             boost::optional<std::string> const& password,
+             boost::optional<will> will,
+             bool clean_session,
+             std::uint16_t keep_alive,
+             std::vector<v5::property_variant> props)
+    >;
+
+    /**
+     * @brief Connack handler
+     * @param session_present
+     *        Session present flag.<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718035<BR>
+     *        3.2.2.2 Session Present
+     * @param reason_code
+     *        CONNACK Reason Code<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718035<BR>
+     *        3.2.2.3 Connect Reason code
+     * @param props
+     *        Properties
+     * @return if the handler returns true, then continue receiving, otherwise quit.
+     */
+    using v5_connack_handler = std::function<
+        bool(bool session_present,
+             std::uint8_t reason_code,
+             std::vector<v5::property_variant> props)
+    >;
+
+    /**
+     * @brief Publish handler
+     * @param fixed_header
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718038<BR>
+     *        3.3.1 Fixed header<BR>
+     *        You can check the fixed header using mqtt::publish functions.
+     * @param packet_id
+     *        packet identifier<BR>
+     *        If received publish's QoS is 0, packet_id is boost::none.<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718039<BR>
+     *        3.3.2  Variable header
+     * @param topic_name
+     *        Topic name
+     * @param contents
+     *        Published contents
+     * @param props
+     *        Properties
+     * @return if the handler returns true, then continue receiving, otherwise quit.
+     */
+    using v5_publish_handler = std::function<
+        bool(std::uint8_t fixed_header,
+             boost::optional<packet_id_t> packet_id,
+             std::string topic_name,
+             std::string contents,
+             std::vector<v5::property_variant> props)
+    >;
+
+    /**
+     * @brief Puback handler
+     * @param packet_id
+     *        packet identifier<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718045<BR>
+     *        3.4.2 Variable header
+     * @param reason_code
+     *        PUBACK Reason Code<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718035<BR>
+     *        3.2.2.3 Connect Reason code
+     * @param props
+     *        Properties
+     * @return if the handler returns true, then continue receiving, otherwise quit.
+     */
+    using v5_puback_handler = std::function<
+        bool(packet_id_t packet_id,
+             std::uint8_t reason_code,
+             std::vector<v5::property_variant> props)
+    >;
+
+    /**
+     * @brief Pubrec handler
+     * @param packet_id
+     *        packet identifier<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718050<BR>
+     *        3.5.2 Variable header
+     * @param reason_code
+     *        PUBREC Reason Code<BR>
+     * @param props
+     *        Properties
+     * @return if the handler returns true, then continue receiving, otherwise quit.
+     */
+    using v5_pubrec_handler = std::function<
+        bool(packet_id_t packet_id,
+             std::uint8_t reason_code,
+             std::vector<v5::property_variant> props)
+    >;
+
+    /**
+     * @brief Pubrel handler
+     * @param packet_id
+     *        packet identifier<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349791<BR>
+     *        3.6.2 Variable header
+     * @param reason_code
+     *        PUBREL Reason Code<BR>
+     * @param props
+     *        Properties
+     * @return if the handler returns true, then continue receiving, otherwise quit.
+     */
+    using v5_pubrel_handler = std::function<
+        bool(packet_id_t packet_id,
+             std::uint8_t reason_code,
+             std::vector<v5::property_variant> props)
+    >;
+
+    /**
+     * @brief Pubcomp handler
+     * @param packet_id
+     *        packet identifier<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718060<BR>
+     *        3.7.2 Variable header
+     * @param reason_code
+     *        PUBCOMP Reason Code<BR>
+     * @param props
+     *        Properties
+     * @return if the handler returns true, then continue receiving, otherwise quit.
+     */
+    using v5_pubcomp_handler = std::function<
+        bool(packet_id_t packet_id,
+             std::uint8_t reason_code,
+             std::vector<v5::property_variant> props)
+    >;
+    /**
+     * @brief Subscribe handler
+     * @param packet_id packet identifier<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349801<BR>
+     *        3.8.2 Variable header
+     * @param entries
+     *        Collection of a pair of Topic Filter and QoS.<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349802<BR>
+     * @param props
+     *        Properties
+     * @return if the handler returns true, then continue receiving, otherwise quit.
+     */
+    using v5_subscribe_handler = std::function<
+        bool(packet_id_t packet_id,
+             std::vector<std::tuple<std::string, std::uint8_t>> entries,
+             std::vector<v5::property_variant> props)
+    >;
+
+    /**
+     * @brief Suback handler
+     * @param packet_id packet identifier<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718070<BR>
+     *        3.9.2 Variable header
+     * @param reasons
+     *        Collection of reason_code.<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718071<BR>
+     * @param props
+     *        Properties
+     * @return if the handler returns true, then continue receiving, otherwise quit.
+     */
+    using v5_suback_handler = std::function<
+        bool(packet_id_t packet_id,
+             std::vector<std::uint8_t> reasons,
+             std::vector<v5::property_variant> props)
+    >;
+
+    /**
+     * @brief Unsubscribe handler
+     * @param packet_id packet identifier<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349810<BR>
+     *        3.10.2 Variable header
+     * @param topics
+     *        Collection of Topic Filters<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc384800448<BR>
+     * @param props
+     *        Properties
+     * @return if the handler returns true, then continue receiving, otherwise quit.
+     */
+    using v5_unsubscribe_handler = std::function<
+        bool(packet_id_t packet_id,
+             std::vector<std::string> topics,
+             std::vector<v5::property_variant> props)
+    >;
+
+    /**
+     * @brief Unsuback handler
+     * @param packet_id packet identifier<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718045<BR>
+     *        3.11.2 Variable header
+     * @param reasons
+     *        Collection of reason_code.<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718071<BR>
+     * @param props
+     *        Properties
+     * @return if the handler returns true, then continue receiving, otherwise quit.
+     */
+    using v5_unsuback_handler = std::function<
+        bool(packet_id_t,
+             std::vector<std::uint8_t> reasons,
+             std::vector<v5::property_variant> props)
+    >;
+
+    /**
+     * @brief Disconnect handler
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc384800463<BR>
+     *        3.14 DISCONNECT – Disconnect notification
+     * @param reason_code
+     *        DISCONNECT Reason Code<BR>
+     * @param props
+     *        Properties
+     */
+    using v5_disconnect_handler = std::function<
+        void(std::uint8_t reason_code,
+             std::vector<v5::property_variant> props)
+    >;
+
+    /**
+     * @brief Auth handler
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc384800463<BR>
+     *        3.15 AUTH – Authentication exchange
+     * @param reason_code
+     *        AUTH Reason Code<BR>
+     * @param props
+     *        Properties
+     */
+    using v5_auth_handler = std::function<
+        void(std::uint8_t reason_code,
+             std::vector<v5::property_variant> props)
+    >;
+
+
+    // Original handlers
+
+    /**
+     * @brief Close handler
+     *
+     * This handler is called if the client called `disconnect()` and the server closed the socket cleanly.
+     * If the socket is closed by other reasons, error_handler is called.
+     */
+    using close_handler = std::function<void()>;
+
+    /**
+     * @brief Error handler
+     *
+     * This handler is called if the socket is closed without client's `disconnect()` call.
+     *
+     * @param ec error code
+     */
+    using error_handler = std::function<void(boost::system::error_code const& ec)>;
+
+    /**
+     * @brief Publish response sent handler
+     *        This function is called just after puback sent on QoS1, or pubcomp sent on QoS2.
+     * @param packet_id
+     *        packet identifier<BR>
+     *        See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718060<BR>
+     *        3.7.2 Variable header
+     */
+    using pub_res_sent_handler = std::function<void(packet_id_t packet_id)>;
 
     /**
      * @brief Serialize publish handler
@@ -335,6 +619,14 @@ public:
      * @param msg publish message
      */
     using serialize_publish_message_handler = std::function<void(basic_publish_message<PacketIdBytes> msg)>;
+
+    /**
+     * @brief Serialize publish handler
+     *        You can serialize the publish message.
+     *        To restore the message, use restore_serialized_message().
+     * @param msg v5::publish message
+     */
+    using serialize_v5_publish_message_handler = std::function<void(v5::basic_publish_message<PacketIdBytes> msg)>;
 
     /**
      * @brief Serialize publish handler
@@ -355,6 +647,16 @@ public:
      * @param msg pubrel message
      */
     using serialize_pubrel_message_handler = std::function<void(basic_pubrel_message<PacketIdBytes> msg)>;
+
+    /**
+     * @brief Serialize pubrel handler
+     *        You can serialize the pubrel message.
+     *        If your storage has already had the publish message that has the same packet_id,
+     *        then you need to replace the publish message to pubrel message.
+     *        To restore the message, use restore_serialized_message().
+     * @param msg pubrel message
+     */
+    using serialize_v5_pubrel_message_handler = std::function<void(v5::basic_pubrel_message<PacketIdBytes> msg)>;
 
     /**
      * @brief Serialize pubrel handler
@@ -498,21 +800,44 @@ public:
         auto_pub_response_async_ = async;
     }
 
+
+    // MQTT Common handlers
+
     /**
-     * @brief Set close handler
+     * @brief Set pingreq handler
      * @param h handler
      */
-    void set_close_handler(close_handler h = close_handler()) {
-        h_close_ = std::move(h);
+    void set_pingreq_handler(pingreq_handler h = pingreq_handler()) {
+        h_pingreq_ = std::move(h);
     }
 
     /**
-     * @brief Set error handler
+     * @brief Set pingresp handler
      * @param h handler
      */
-    void set_error_handler(error_handler h = error_handler()) {
-        h_error_ = std::move(h);
+    void set_pingresp_handler(pingresp_handler h = pingresp_handler()) {
+        h_pingresp_ = std::move(h);
     }
+
+
+    /**
+     * @brief Get pingreq handler
+     * @return handler
+     */
+    pingreq_handler get_pingreq_handler() const {
+        return h_pingreq_;
+    }
+
+    /**
+     * @brief Get pingresp handler
+     * @return handler
+     */
+    pingresp_handler get_pingresp_handler() const {
+        return h_pingresp_;
+    }
+
+
+    // MQTT v3_1_1 handlers
 
     /**
      * @brief Set connect handler
@@ -571,14 +896,6 @@ public:
     }
 
     /**
-     * @brief Set pubcomp handler
-     * @param h handler
-     */
-    void set_pub_res_sent_handler(pub_res_sent_handler h = pub_res_sent_handler()) {
-        h_pub_res_sent_ = std::move(h);
-    }
-
-    /**
      * @brief Set subscribe handler
      * @param h handler
      */
@@ -611,113 +928,11 @@ public:
     }
 
     /**
-     * @brief Set pingreq handler
-     * @param h handler
-     */
-    void set_pingreq_handler(pingreq_handler h = pingreq_handler()) {
-        h_pingreq_ = std::move(h);
-    }
-
-    /**
-     * @brief Set pingresp handler
-     * @param h handler
-     */
-    void set_pingresp_handler(pingresp_handler h = pingresp_handler()) {
-        h_pingresp_ = std::move(h);
-    }
-
-    /**
      * @brief Set disconnect handler
      * @param h handler
      */
     void set_disconnect_handler(disconnect_handler h = disconnect_handler()) {
         h_disconnect_ = std::move(h);
-    }
-
-    /**
-     * @brief Set serialize handlers
-     * @param h_publish serialize handler for publish message
-     * @param h_pubrel serialize handler for pubrel message
-     * @param h_remove remove handler for serialized message
-     */
-    void set_serialize_handlers(
-        serialize_publish_message_handler h_publish,
-        serialize_pubrel_message_handler h_pubrel,
-        serialize_remove_handler h_remove) {
-        h_serialize_publish_ = std::move(h_publish);
-        h_serialize_pubrel_ = std::move(h_pubrel);
-        h_serialize_remove_ = std::move(h_remove);
-    }
-
-    /**
-     * @brief Set serialize handlers
-     * @param h_publish serialize handler for publish message
-     * @param h_pubrel serialize handler for pubrel message
-     * @param h_remove remove handler for serialized message
-     */
-    void set_serialize_handlers(
-        serialize_publish_handler h_publish,
-        serialize_pubrel_handler h_pubrel,
-        serialize_remove_handler h_remove) {
-        h_serialize_publish_ =
-            [MQTT_CAPTURE_MOVE(h_publish)]
-            (basic_publish_message<PacketIdBytes> msg) {
-                if (h_publish) {
-                    auto buf = continuous_buffer<PacketIdBytes>(msg);
-                    h_publish(msg.packet_id(), buf.data(), buf.size());
-                }
-            };
-        h_serialize_pubrel_ =
-            [MQTT_CAPTURE_MOVE(h_pubrel)]
-            (basic_pubrel_message<PacketIdBytes> msg) {
-                if (h_pubrel) {
-                    auto buf = continuous_buffer<PacketIdBytes>(msg);
-                    h_pubrel(msg.packet_id(), buf.data(), buf.size());
-                }
-            };
-        h_serialize_remove_ = std::move(h_remove);
-    }
-
-    /**
-     * @brief Clear serialize handlers
-     */
-    void set_serialize_handlers() {
-        h_serialize_publish_ = serialize_publish_handler();
-        h_serialize_pubrel_ = serialize_pubrel_handler();
-        h_serialize_remove_ = serialize_remove_handler();
-    }
-
-    /**
-     * @brief Set pre-send handler
-     * @param h handler
-     */
-    void set_pre_send_handler(pre_send_handler h = pre_send_handler()) {
-        h_pre_send_ = std::move(h);
-    }
-
-    /**
-     * @brief Set check length handler
-     * @param h handler
-     */
-    void set_is_valid_length_handler(is_valid_length_handler h = is_valid_length_handler()) {
-        h_is_valid_length_ = std::move(h);
-    }
-
-
-    /**
-     * @brief Get close handler
-     * @return handler
-     */
-    close_handler get_close_handler() const {
-        return h_close_;
-    }
-
-    /**
-     * @brief Get error handler
-     * @return handler
-     */
-    error_handler get_error_handler() const {
-        return h_error_;
     }
 
     /**
@@ -777,14 +992,6 @@ public:
     }
 
     /**
-     * @brief Get pubcomp handler
-     * @return handler
-     */
-    pub_res_sent_handler get_pub_res_sent_handler() const {
-        return h_pub_res_sent_;
-    }
-
-    /**
      * @brief Get subscribe handler
      * @return handler
      */
@@ -817,27 +1024,373 @@ public:
     }
 
     /**
-     * @brief Get pingreq handler
+     * @brief Get disconnect handler
      * @return handler
      */
-    pingreq_handler get_pingreq_handler() const {
-        return h_pingreq_;
+    disconnect_handler get_disconnect_handler() const {
+        return h_disconnect_;
+    }
+
+    // MQTT v5 handlers
+
+    /**
+     * @brief Set connect handler
+     * @param h handler
+     */
+    void set_v5_connect_handler(v5_connect_handler h = v5_connect_handler()) {
+        h_v5_connect_ = std::move(h);
     }
 
     /**
-     * @brief Get pingresp handler
+     * @brief Set connack handler
+     * @param h handler
+     */
+    void set_v5_connack_handler(v5_connack_handler h = v5_connack_handler()) {
+        h_v5_connack_ = std::move(h);
+    }
+
+    /**
+     * @brief Set publish handler
+     * @param h handler
+     */
+    void set_v5_publish_handler(v5_publish_handler h = v5_publish_handler()) {
+        h_v5_publish_ = std::move(h);
+    }
+
+    /**
+     * @brief Set puback handler
+     * @param h handler
+     */
+    void set_v5_puback_handler(v5_puback_handler h = v5_puback_handler()) {
+        h_v5_puback_ = std::move(h);
+    }
+
+    /**
+     * @brief Set pubrec handler
+     * @param h handler
+     */
+    void set_v5_pubrec_handler(v5_pubrec_handler h = v5_pubrec_handler()) {
+        h_v5_pubrec_ = std::move(h);
+    }
+
+    /**
+     * @brief Set pubrel handler
+     * @param h handler
+     */
+    void set_v5_pubrel_handler(v5_pubrel_handler h = v5_pubrel_handler()) {
+        h_v5_pubrel_ = std::move(h);
+    }
+
+    /**
+     * @brief Set pubcomp handler
+     * @param h handler
+     */
+    void set_v5_pubcomp_handler(v5_pubcomp_handler h = v5_pubcomp_handler()) {
+        h_v5_pubcomp_ = std::move(h);
+    }
+
+    /**
+     * @brief Set subscribe handler
+     * @param h handler
+     */
+    void set_v5_subscribe_handler(v5_subscribe_handler h = v5_subscribe_handler()) {
+        h_v5_subscribe_ = std::move(h);
+    }
+
+    /**
+     * @brief Set suback handler
+     * @param h handler
+     */
+    void set_v5_suback_handler(v5_suback_handler h = v5_suback_handler()) {
+        h_v5_suback_ = std::move(h);
+    }
+
+    /**
+     * @brief Set unsubscribe handler
+     * @param h handler
+     */
+    void set_v5_unsubscribe_handler(v5_unsubscribe_handler h = v5_unsubscribe_handler()) {
+        h_v5_unsubscribe_ = std::move(h);
+    }
+
+    /**
+     * @brief Set unsuback handler
+     * @param h handler
+     */
+    void set_v5_unsuback_handler(v5_unsuback_handler h = v5_unsuback_handler()) {
+        h_v5_unsuback_ = std::move(h);
+    }
+
+    /**
+     * @brief Set disconnect handler
+     * @param h handler
+     */
+    void set_v5_disconnect_handler(v5_disconnect_handler h = v5_disconnect_handler()) {
+        h_v5_disconnect_ = std::move(h);
+    }
+
+    /**
+     * @brief Get connect handler
      * @return handler
      */
-    pingresp_handler get_pingresp_handler() const {
-        return h_pingresp_;
+    v5_connect_handler get_v5_connect_handler() const {
+        return h_v5_connect_;
+    }
+
+    /**
+     * @brief Get connack handler
+     * @return handler
+     */
+    v5_connack_handler get_v5_connack_handler() const {
+        return h_v5_connack_;
+    }
+
+    /**
+     * @brief Set publish handler
+     * @return handler
+     */
+    v5_publish_handler get_v5_publish_handler() const {
+        return h_v5_publish_;
+    }
+
+    /**
+     * @brief Get puback handler
+     * @return handler
+     */
+    v5_puback_handler get_v5_puback_handler() const {
+        return h_v5_puback_;
+    }
+
+    /**
+     * @brief Get pubrec handler
+     * @return handler
+     */
+    v5_pubrec_handler get_v5_pubrec_handler() const {
+        return h_v5_pubrec_;
+    }
+
+    /**
+     * @brief Get pubrel handler
+     * @return handler
+     */
+    v5_pubrel_handler get_v5_pubrel_handler() const {
+        return h_v5_pubrel_;
+    }
+
+    /**
+     * @brief Get pubcomp handler
+     * @return handler
+     */
+    v5_pubcomp_handler get_v5_pubcomp_handler() const {
+        return h_v5_pubcomp_;
+    }
+
+    /**
+     * @brief Get subscribe handler
+     * @return handler
+     */
+    v5_subscribe_handler get_v5_subscribe_handler() const {
+        return h_v5_subscribe_;
+    }
+
+    /**
+     * @brief Get suback handler
+     * @return handler
+     */
+    v5_suback_handler get_v5_suback_handler() const {
+        return h_v5_suback_;
+    }
+
+    /**
+     * @brief Get unsubscribe handler
+     * @return handler
+     */
+    v5_unsubscribe_handler get_v5_unsubscribe_handler() const {
+        return h_v5_unsubscribe_;
+    }
+
+    /**
+     * @brief Get unsuback handler
+     * @return handler
+     */
+    v5_unsuback_handler get_v5_unsuback_handler() const {
+        return h_v5_unsuback_;
     }
 
     /**
      * @brief Get disconnect handler
      * @return handler
      */
-    disconnect_handler get_disconnect_handler() const {
-        return h_disconnect_;
+    v5_disconnect_handler get_v5_disconnect_handler() const {
+        return h_v5_disconnect_;
+    }
+
+
+    // Original handlers
+
+    /**
+     * @brief Set close handler
+     * @param h handler
+     */
+    void set_close_handler(close_handler h = close_handler()) {
+        h_close_ = std::move(h);
+    }
+
+    /**
+     * @brief Set error handler
+     * @param h handler
+     */
+    void set_error_handler(error_handler h = error_handler()) {
+        h_error_ = std::move(h);
+    }
+
+    /**
+     * @brief Set pubcomp handler
+     * @param h handler
+     */
+    void set_pub_res_sent_handler(pub_res_sent_handler h = pub_res_sent_handler()) {
+        h_pub_res_sent_ = std::move(h);
+    }
+
+    /**
+     * @brief Set serialize handlers
+     * @param h_publish serialize handler for publish message
+     * @param h_pubrel serialize handler for pubrel message
+     * @param h_remove remove handler for serialized message
+     */
+    void set_serialize_handlers(
+        serialize_publish_message_handler h_publish,
+        serialize_pubrel_message_handler h_pubrel,
+        serialize_remove_handler h_remove) {
+        h_serialize_publish_ = std::move(h_publish);
+        h_serialize_pubrel_ = std::move(h_pubrel);
+        h_serialize_remove_ = std::move(h_remove);
+    }
+
+    /**
+     * @brief Set serialize handlers
+     * @param h_publish serialize handler for publish message
+     * @param h_pubrel serialize handler for pubrel message
+     * @param h_remove remove handler for serialized message
+     */
+    void set_v5_serialize_handlers(
+        serialize_v5_publish_message_handler h_publish,
+        serialize_v5_pubrel_message_handler h_pubrel,
+        serialize_remove_handler h_remove) {
+        h_serialize_v5_publish_ = std::move(h_publish);
+        h_serialize_v5_pubrel_ = std::move(h_pubrel);
+        h_serialize_remove_ = std::move(h_remove);
+    }
+
+    /**
+     * @brief Set serialize handlers
+     * @param h_publish serialize handler for publish message
+     * @param h_pubrel serialize handler for pubrel message
+     * @param h_remove remove handler for serialized message
+     */
+    void set_serialize_handlers(
+        serialize_publish_handler h_publish,
+        serialize_pubrel_handler h_pubrel,
+        serialize_remove_handler h_remove) {
+        h_serialize_publish_ =
+            [MQTT_CAPTURE_MOVE(h_publish)]
+            (basic_publish_message<PacketIdBytes> msg) {
+                if (h_publish) {
+                    auto buf = continuous_buffer<PacketIdBytes>(msg);
+                    h_publish(msg.packet_id(), buf.data(), buf.size());
+                }
+            };
+        h_serialize_pubrel_ =
+            [MQTT_CAPTURE_MOVE(h_pubrel)]
+            (basic_pubrel_message<PacketIdBytes> msg) {
+                if (h_pubrel) {
+                    auto buf = continuous_buffer<PacketIdBytes>(msg);
+                    h_pubrel(msg.packet_id(), buf.data(), buf.size());
+                }
+            };
+        h_serialize_remove_ = std::move(h_remove);
+    }
+
+    /**
+     * @brief Set serialize handlers
+     * @param h_publish serialize handler for publish message
+     * @param h_pubrel serialize handler for pubrel message
+     * @param h_remove remove handler for serialized message
+     */
+    void set_v5_serialize_handlers(
+        serialize_publish_handler h_publish,
+        serialize_pubrel_handler h_pubrel,
+        serialize_remove_handler h_remove) {
+        h_serialize_v5_publish_ =
+            [MQTT_CAPTURE_MOVE(h_publish)]
+            (v5::basic_publish_message<PacketIdBytes> msg) {
+                if (h_publish) {
+                    auto buf = continuous_buffer<PacketIdBytes>(msg);
+                    h_publish(msg.packet_id(), buf.data(), buf.size());
+                }
+            };
+        h_serialize_v5_pubrel_ =
+            [MQTT_CAPTURE_MOVE(h_pubrel)]
+            (v5::basic_pubrel_message<PacketIdBytes> msg) {
+                if (h_pubrel) {
+                    auto buf = continuous_buffer<PacketIdBytes>(msg);
+                    h_pubrel(msg.packet_id(), buf.data(), buf.size());
+                }
+            };
+        h_serialize_remove_ = std::move(h_remove);
+    }
+
+    /**
+     * @brief Clear serialize handlers
+     */
+    void set_serialize_handlers() {
+        h_serialize_publish_ = serialize_publish_message_handler();
+        h_serialize_pubrel_ = serialize_pubrel_message_handler();
+        h_serialize_v5_publish_ = serialize_v5_publish_message_handler();
+        h_serialize_v5_pubrel_ = serialize_v5_pubrel_message_handler();
+        h_serialize_remove_ = serialize_remove_handler();
+    }
+
+    /**
+     * @brief Set pre-send handler
+     * @param h handler
+     */
+    void set_pre_send_handler(pre_send_handler h = pre_send_handler()) {
+        h_pre_send_ = std::move(h);
+    }
+
+    /**
+     * @brief Set check length handler
+     * @param h handler
+     */
+    void set_is_valid_length_handler(is_valid_length_handler h = is_valid_length_handler()) {
+        h_is_valid_length_ = std::move(h);
+    }
+
+
+    /**
+     * @brief Get close handler
+     * @return handler
+     */
+    close_handler get_close_handler() const {
+        return h_close_;
+    }
+
+    /**
+     * @brief Get error handler
+     * @return handler
+     */
+    error_handler get_error_handler() const {
+        return h_error_;
+    }
+
+
+    /**
+     * @brief Get pubcomp handler
+     * @return handler
+     */
+    pub_res_sent_handler get_pub_res_sent_handler() const {
+        return h_pub_res_sent_;
     }
 
     /**
@@ -854,6 +1407,22 @@ public:
      */
     serialize_pubrel_message_handler get_serialize_pubrel_message_handler() const {
         return h_serialize_pubrel_;
+    }
+
+    /**
+     * @brief Get serialize publish handler
+     * @return handler
+     */
+    serialize_v5_publish_message_handler get_serialize_v5_publish_message_handler() const {
+        return h_serialize_v5_publish_;
+    }
+
+    /**
+     * @brief Get serialize pubrel handler
+     * @return handler
+     */
+    serialize_v5_pubrel_message_handler get_serialize_v5_pubrel_message_handler() const {
+        return h_serialize_v5_pubrel_;
     }
 
     /**
@@ -906,8 +1475,10 @@ public:
     void publish_at_most_once(
         std::string const& topic_name,
         std::string const& contents,
-        bool retain = false) {
-        acquired_publish(0, topic_name, contents, qos::at_most_once, retain);
+        bool retain = false,
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
+        acquired_publish(0, topic_name, contents, qos::at_most_once, retain, std::move(props));
     }
 
     /**
@@ -1713,6 +2284,7 @@ public:
             retain,
             false,
             packet_id,
+            boost::none,
             as::buffer(*sp_contents),
             [sp_topic_name, sp_contents] {}
         );
@@ -1746,6 +2318,7 @@ public:
             retain,
             false,
             packet_id,
+            boost::none,
             contents,
             life_keeper
         );
@@ -1780,6 +2353,7 @@ public:
             retain,
             false,
             packet_id,
+            boost::none,
             as::buffer(*sp_contents),
             [sp_topic_name, sp_contents] {}
         );
@@ -1813,6 +2387,7 @@ public:
             retain,
             false,
             packet_id,
+            boost::none,
             contents,
             life_keeper
         );
@@ -1840,7 +2415,9 @@ public:
         std::string const& topic_name,
         std::string const& contents,
         std::uint8_t qos = qos::at_most_once,
-        bool retain = false) {
+        bool retain = false,
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
         BOOST_ASSERT(qos == qos::at_most_once || qos::at_least_once || qos::exactly_once);
         BOOST_ASSERT((qos == qos::at_most_once && packet_id == 0) || (qos != qos::at_most_once && packet_id != 0));
         auto sp_topic_name = std::make_shared<std::string>(topic_name);
@@ -1852,6 +2429,7 @@ public:
             retain,
             false,
             packet_id,
+            std::move(props),
             as::buffer(*sp_contents),
             [sp_topic_name, sp_contents] {}
         );
@@ -1881,7 +2459,9 @@ public:
         as::const_buffer const& contents,
         life_keeper_t const& life_keeper,
         std::uint8_t qos = qos::at_most_once,
-        bool retain = false) {
+        bool retain = false,
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
         BOOST_ASSERT(qos == qos::at_most_once || qos::at_least_once || qos::exactly_once);
         BOOST_ASSERT((qos == qos::at_most_once && packet_id == 0) || (qos != qos::at_most_once && packet_id != 0));
 
@@ -1891,6 +2471,7 @@ public:
             retain,
             false,
             packet_id,
+            std::move(props),
             contents,
             life_keeper
         );
@@ -1918,7 +2499,9 @@ public:
         std::string const& topic_name,
         std::string const& contents,
         std::uint8_t qos = qos::at_most_once,
-        bool retain = false) {
+        bool retain = false,
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
         BOOST_ASSERT(qos == qos::at_most_once || qos::at_least_once || qos::exactly_once);
         BOOST_ASSERT((qos == qos::at_most_once && packet_id == 0) || (qos != qos::at_most_once && packet_id != 0));
 
@@ -1931,6 +2514,7 @@ public:
             retain,
             true,
             packet_id,
+            std::move(props),
             as::buffer(*sp_contents),
             [sp_topic_name, sp_contents] {}
         );
@@ -1960,7 +2544,9 @@ public:
         as::const_buffer const& contents,
         life_keeper_t const& life_keeper,
         std::uint8_t qos = qos::at_most_once,
-        bool retain = false) {
+        bool retain = false,
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
         BOOST_ASSERT(qos == qos::at_most_once || qos::at_least_once || qos::exactly_once);
         BOOST_ASSERT((qos == qos::at_most_once && packet_id == 0) || (qos != qos::at_most_once && packet_id != 0));
 
@@ -1970,6 +2556,7 @@ public:
             retain,
             true,
             packet_id,
+            std::move(props),
             contents,
             life_keeper
         );
@@ -3275,7 +3862,9 @@ public:
         std::string const& topic_name,
         std::string const& contents,
         bool retain = false,
-        async_handler_t const& func = async_handler_t()) {
+        async_handler_t const& func = async_handler_t(),
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
 
         auto sp_topic_name = std::make_shared<std::string>(topic_name);
         auto sp_contents = std::make_shared<std::string>(contents);
@@ -3286,6 +3875,7 @@ public:
             retain,
             false,
             packet_id,
+            std::move(props),
             as::buffer(*sp_contents),
             func,
             [sp_topic_name, sp_contents] {}
@@ -3316,7 +3906,9 @@ public:
         as::const_buffer const& contents,
         life_keeper_t const& life_keeper,
         bool retain = false,
-        async_handler_t const& func = async_handler_t()) {
+        async_handler_t const& func = async_handler_t(),
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
 
         async_send_publish(
             topic_name,
@@ -3324,6 +3916,7 @@ public:
             retain,
             false,
             packet_id,
+            std::move(props),
             contents,
             func,
             life_keeper
@@ -3350,7 +3943,9 @@ public:
         std::string const& topic_name,
         std::string const& contents,
         bool retain = false,
-        async_handler_t const& func = async_handler_t()) {
+        async_handler_t const& func = async_handler_t(),
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
 
         auto sp_topic_name = std::make_shared<std::string>(topic_name);
         auto sp_contents = std::make_shared<std::string>(contents);
@@ -3361,6 +3956,7 @@ public:
             retain,
             false,
             packet_id,
+            std::move(props),
             as::buffer(*sp_contents),
             func,
             [sp_topic_name, sp_contents] {}
@@ -3389,7 +3985,9 @@ public:
         as::const_buffer const& contents,
         life_keeper_t const& life_keeper,
         bool retain = false,
-        async_handler_t const& func = async_handler_t()) {
+        async_handler_t const& func = async_handler_t(),
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
 
         async_send_publish(
             topic_name,
@@ -3397,6 +3995,7 @@ public:
             retain,
             false,
             packet_id,
+            std::move(props),
             contents,
             func,
             life_keeper
@@ -3427,7 +4026,9 @@ public:
         std::string const& contents,
         std::uint8_t qos = qos::at_most_once,
         bool retain = false,
-        async_handler_t const& func = async_handler_t()) {
+        async_handler_t const& func = async_handler_t(),
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
         BOOST_ASSERT(qos == qos::at_most_once || qos::at_least_once || qos::exactly_once);
         BOOST_ASSERT((qos == qos::at_most_once && packet_id == 0) || (qos != qos::at_most_once && packet_id != 0));
 
@@ -3440,6 +4041,7 @@ public:
             retain,
             false,
             packet_id,
+            std::move(props),
             as::buffer(*sp_contents),
             func,
             [sp_topic_name, sp_contents] {}
@@ -3472,7 +4074,9 @@ public:
         life_keeper_t const& life_keeper,
         std::uint8_t qos = qos::at_most_once,
         bool retain = false,
-        async_handler_t const& func = async_handler_t()) {
+        async_handler_t const& func = async_handler_t(),
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
         BOOST_ASSERT(qos == qos::at_most_once || qos::at_least_once || qos::exactly_once);
         BOOST_ASSERT((qos == qos::at_most_once && packet_id == 0) || (qos != qos::at_most_once && packet_id != 0));
 
@@ -3482,6 +4086,7 @@ public:
             retain,
             false,
             packet_id,
+            std::move(props),
             contents,
             func,
             life_keeper
@@ -3512,7 +4117,9 @@ public:
         std::string const& contents,
         std::uint8_t qos = qos::at_most_once,
         bool retain = false,
-        async_handler_t const& func = async_handler_t()) {
+        async_handler_t const& func = async_handler_t(),
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
         BOOST_ASSERT(qos == qos::at_most_once || qos::at_least_once || qos::exactly_once);
         BOOST_ASSERT((qos == qos::at_most_once && packet_id == 0) || (qos != qos::at_most_once && packet_id != 0));
 
@@ -3525,6 +4132,7 @@ public:
             retain,
             true,
             packet_id,
+            std::move(props),
             as::buffer(*sp_contents),
             func,
             [sp_topic_name, sp_contents] {}
@@ -3557,7 +4165,9 @@ public:
         life_keeper_t const& life_keeper,
         std::uint8_t qos = qos::at_most_once,
         bool retain = false,
-        async_handler_t const& func = async_handler_t()) {
+        async_handler_t const& func = async_handler_t(),
+        boost::optional<std::vector<v5::property_variant>> props = boost::none
+    ) {
         BOOST_ASSERT(qos == qos::at_most_once || qos::at_least_once || qos::exactly_once);
         BOOST_ASSERT((qos == qos::at_most_once && packet_id == 0) || (qos != qos::at_most_once && packet_id != 0));
 
@@ -3567,6 +4177,7 @@ public:
             retain,
             true,
             packet_id,
+            std::move(props),
             contents,
             func,
             life_keeper
@@ -4195,6 +4806,74 @@ public:
      * @param msg pubrel message.
      */
     void restore_serialized_message(basic_pubrel_message<PacketIdBytes> msg) {
+        auto packet_id = msg.packet_id();
+        LockGuard<Mutex> lck (store_mtx_);
+        if (packet_id_.insert(packet_id).second) {
+            auto ret = store_.emplace(
+                packet_id,
+                control_packet_type::pubcomp,
+                std::move(msg),
+                []{}
+            );
+            BOOST_ASSERT(ret.second);
+        }
+    }
+
+    /**
+     * @brief Restore serialized publish and pubrel messages.
+     *        This function shouold be called before connect.
+     * @param packet_id packet id of the message
+     * @param b         iterator begin of the message
+     * @param e         iterator end of the message
+     */
+    template <typename Iterator>
+    typename std::enable_if<std::is_convertible<typename Iterator::value_type, char>::value>::type
+    restore_v5_serialized_message(packet_id_t /*packet_id*/, Iterator b, Iterator e) {
+        if (b == e) return;
+
+        auto fixed_header = *b;
+        switch (get_control_packet_type(fixed_header)) {
+        case control_packet_type::publish: {
+            auto sp = std::make_shared<v5::basic_publish_message<PacketIdBytes>>(b, e);
+            restore_serialized_message(*sp, [sp] {});
+        } break;
+        case control_packet_type::pubrel: {
+            restore_serialized_message(v5::basic_pubrel_message<PacketIdBytes>(b, e));
+        } break;
+        default:
+            throw protocol_error();
+            break;
+        }
+    }
+
+    /**
+     * @brief Restore serialized publish message.
+     *        This function shouold be called before connect.
+     * @param msg         publish message.
+     * @param life_keeper the function that keeps the msg lifetime.
+     */
+    void restore_v5_serialized_message(v5::basic_publish_message<PacketIdBytes> msg, life_keeper_t life_keeper) {
+        auto packet_id = msg.packet_id();
+        auto qos = msg.qos();
+        LockGuard<Mutex> lck (store_mtx_);
+        if (packet_id_.insert(packet_id).second) {
+            auto ret = store_.emplace(
+                packet_id,
+                qos == qos::at_least_once ? control_packet_type::puback
+                                          : control_packet_type::pubrec,
+                std::move(msg),
+                std::move(life_keeper)
+            );
+            BOOST_ASSERT(ret.second);
+        }
+    }
+
+    /**
+     * @brief Restore serialized pubrel message.
+     *        This function shouold be called before connect.
+     * @param msg pubrel message.
+     */
+    void restore_v5_serialized_message(v5::basic_pubrel_message<PacketIdBytes> msg) {
         auto packet_id = msg.packet_id();
         LockGuard<Mutex> lck (store_mtx_);
         if (packet_id_.insert(packet_id).second) {
@@ -4958,16 +5637,49 @@ private:
             payload_[i++] != 'M' ||
             payload_[i++] != 'Q' ||
             payload_[i++] != 'T' ||
-            payload_[i++] != 'T' ||
-            payload_[i++] != 0x04) {
+            payload_[i++] != 'T') {
             if (func) func(boost::system::errc::make_error_code(boost::system::errc::protocol_error));
             return false;
         }
+
+        auto version = static_cast<std::uint8_t>(payload_[i++]);
+        if (version != protocol_version::v3_1_1 && version != protocol_version::v5) {
+            if (func) {
+                func(boost::system::errc::make_error_code(boost::system::errc::protocol_not_supported));
+            }
+            return false;
+        }
+
+        if (version_ == protocol_version::undetermined) {
+            version_ = version;
+        }
+        else if (version_ != version) {
+            if (func) {
+                func(boost::system::errc::make_error_code(boost::system::errc::protocol_not_supported));
+            }
+            return false;
+        }
+
         char byte8 = payload_[i++];
 
         std::uint16_t keep_alive;
         keep_alive = make_uint16_t(payload_[i], payload_[i + 1]); // index is checked at *1
         i += 2;
+
+        std::vector<v5::property_variant> props;
+        if (version_ == protocol_version::v5) {
+            char const* b = &payload_[i];
+            char const* it = b;
+            char const* e = b + payload_.size();
+            if (auto props_opt = v5::property::parse_with_length(it, e)) {
+                props = std::move(*props_opt);
+            }
+            else {
+                if (func) func(boost::system::errc::make_error_code(boost::system::errc::message_size));
+                return false;
+            }
+            i += std::distance(b, it);
+        }
 
         if (remaining_length_ < i + 2) {
             if (func) func(boost::system::errc::make_error_code(boost::system::errc::message_size));
@@ -5082,10 +5794,40 @@ private:
             packet_id_.clear();
         }
 
-        if (h_connect_) {
-            if (h_connect_(client_id_, user_name, password, std::move(w), clean_session_, keep_alive)) {
-                return true;
+        switch (version_ ) {
+        case protocol_version::v3_1_1:
+            if (h_connect_) {
+                if (h_connect_(
+                        client_id_,
+                        user_name,
+                        password,
+                        std::move(w),
+                        clean_session_,
+                        keep_alive)
+                ) {
+                    return true;
+                }
+                return false;
             }
+            break;
+        case protocol_version::v5:
+            if (h_v5_connect_) {
+                if (h_v5_connect_(
+                        client_id_,
+                        user_name,
+                        password,
+                        std::move(w),
+                        clean_session_,
+                        keep_alive,
+                        props)
+                ) {
+                    return true;
+                }
+                return false;
+            }
+            break;
+        default:
+            BOOST_ASSERT(false);
             return false;
         }
         return true;
@@ -5112,8 +5854,48 @@ private:
             }
         }
         bool session_present = is_session_present(payload_[0]);
+
+        std::vector<v5::property_variant> props;
+        if (version_ == protocol_version::v5) {
+            char const* b = &payload_[2];
+            char const* it = b;
+            char const* e = b + payload_.size();
+            if (auto props_opt = v5::property::parse_with_length(it, e)) {
+                props = std::move(*props_opt);
+            }
+            else {
+                if (func) func(boost::system::errc::make_error_code(boost::system::errc::message_size));
+                return false;
+            }
+        }
+
         mqtt_connected_ = true;
-        if (h_connack_) return h_connack_(session_present, static_cast<std::uint8_t>(payload_[1]));
+
+        switch (version_ ) {
+        case protocol_version::v3_1_1:
+            if (h_connack_) {
+                return
+                    h_connack_(
+                        session_present,
+                        static_cast<std::uint8_t>(payload_[1])
+                    );
+            }
+            break;
+        case protocol_version::v5:
+            if (h_v5_connack_) {
+                return
+                    h_v5_connack_(
+                        session_present,
+                        static_cast<std::uint8_t>(payload_[1]),
+                        std::move(props)
+                    );
+            }
+            break;
+        default:
+            BOOST_ASSERT(false);
+            return false;
+        }
+
         return true;
     }
 
@@ -5486,6 +6268,7 @@ private:
         bool retain,
         bool dup,
         packet_id_t packet_id,
+        boost::optional<std::vector<v5::property_variant>> props,
         as::const_buffer const& payload,
         life_keeper_t life_keeper) {
 
@@ -5505,25 +6288,53 @@ private:
                 payload
             );
 
-        if (qos == qos::at_least_once || qos == qos::exactly_once) {
-            auto store_msg = msg;
-            store_msg.set_dup(true);
-            {
-                LockGuard<Mutex> lck (store_mtx_);
-                auto ret = store_.emplace(
+        auto do_send_publish =
+            [&](auto msg, auto const& serialize_publish) {
+
+                if (qos == qos::at_least_once || qos == qos::exactly_once) {
+                    auto store_msg = msg;
+                    store_msg.set_dup(true);
+                    LockGuard<Mutex> lck (store_mtx_);
+                    store_.emplace(
+                        packet_id,
+                        qos == qos::at_least_once ? control_packet_type::puback
+                        : control_packet_type::pubrec,
+                        store_msg,
+                        [g] {}
+                    );
+                    if (serialize_publish) {
+                        serialize_publish(store_msg);
+                    }
+                }
+                do_sync_write(msg);
+            };
+        if (props) {
+            do_send_publish(
+                v5::basic_publish_message<PacketIdBytes>(
+                    topic_name,
+                    qos,
+                    retain,
+                    dup,
                     packet_id,
-                    qos == qos::at_least_once ? control_packet_type::puback
-                                              : control_packet_type::pubrec,
-                    store_msg,
-                    [g] {}
-                );
-                BOOST_ASSERT(ret.second);
-            }
-            if (h_serialize_publish_) {
-                h_serialize_publish_(msg);
-            }
+                    std::move(props.get()),
+                    payload
+                ),
+                h_serialize_v5_publish_
+            );
         }
-        do_sync_write(msg);
+        else {
+            do_send_publish(
+                v3_1_1::basic_publish_message<PacketIdBytes>(
+                    topic_name,
+                    qos,
+                    retain,
+                    dup,
+                    packet_id,
+                    payload
+                ),
+                h_serialize_publish_
+            );
+        }
     }
 
     void send_puback(packet_id_t packet_id) {
@@ -5711,6 +6522,7 @@ private:
         bool retain,
         bool dup,
         packet_id_t packet_id,
+        boost::optional<std::vector<v5::property_variant>> props,
         as::const_buffer const& payload,
         async_handler_t const& func,
         life_keeper_t life_keeper) {
@@ -5721,42 +6533,61 @@ private:
             }
         );
 
-        auto msg =
-            basic_publish_message<PacketIdBytes>(
-                topic_name,
-                qos,
-                retain,
-                dup,
-                packet_id,
-                payload
-            );
+        auto do_async_send_publish =
+            [&](auto msg, auto const& serialize_publish) {
+                auto store_msg = msg;
+                store_msg.set_dup(true);
+                {
+                    LockGuard<Mutex> lck (store_mtx_);
+                    auto ret = store_.emplace(
+                        packet_id,
+                        qos == qos::at_least_once ? control_packet_type::puback
+                                                  : control_packet_type::pubrec,
+                        store_msg,
+                        [g] {}
+                    );
+                    BOOST_ASSERT(ret.second);
+                }
 
-        if (qos == qos::at_least_once || qos == qos::exactly_once) {
-            auto store_msg = msg;
-            store_msg.set_dup(true);
-            {
-                LockGuard<Mutex> lck (store_mtx_);
-                auto ret = store_.emplace(
-                    packet_id,
-                    qos == qos::at_least_once ? control_packet_type::puback
-                                              : control_packet_type::pubrec,
-                    store_msg,
-                    [g] {}
+                if (serialize_publish) {
+                    serialize_publish(store_msg);
+                }
+
+                do_async_write(
+                    msg,
+                    [g, func](boost::system::error_code const& ec) {
+                        if (func) func(ec);
+                    }
                 );
-                BOOST_ASSERT(ret.second);
-            }
+            };
 
-            if (h_serialize_publish_) {
-                h_serialize_publish_(msg);
-            }
+        if (props) {
+            do_async_send_publish(
+                v5::basic_publish_message<PacketIdBytes>(
+                    topic_name,
+                    qos,
+                    retain,
+                    dup,
+                    packet_id,
+                    std::move(props.get()),
+                    payload
+                ),
+                h_serialize_v5_publish_
+            );
         }
-
-        do_async_write(
-            msg,
-            [g, func](boost::system::error_code const& ec) {
-                if (func) func(ec);
-            }
-        );
+        else {
+            do_async_send_publish(
+                v3_1_1::basic_publish_message<PacketIdBytes>(
+                    topic_name,
+                    qos,
+                    retain,
+                    dup,
+                    packet_id,
+                    payload
+                ),
+                h_serialize_publish_
+            );
+        }
     }
 
     void async_send_puback(packet_id_t packet_id, async_handler_t const& func) {
@@ -6067,8 +6898,12 @@ private:
     std::size_t remaining_length_multiplier_;
     std::size_t remaining_length_;
     std::vector<char> payload_;
-    close_handler h_close_;
-    error_handler h_error_;
+
+    // MQTT common handlers
+    pingreq_handler h_pingreq_;
+    pingresp_handler h_pingresp_;
+
+    // MQTT v3_1_1 handlers
     connect_handler h_connect_;
     connack_handler h_connack_;
     publish_handler h_publish_;
@@ -6076,19 +6911,38 @@ private:
     pubrec_handler h_pubrec_;
     pubrel_handler h_pubrel_;
     pubcomp_handler h_pubcomp_;
-    pub_res_sent_handler h_pub_res_sent_;
     subscribe_handler h_subscribe_;
     suback_handler h_suback_;
     unsubscribe_handler h_unsubscribe_;
     unsuback_handler h_unsuback_;
-    pingreq_handler h_pingreq_;
-    pingresp_handler h_pingresp_;
     disconnect_handler h_disconnect_;
+
+    // MQTT v5 handlers
+    v5_connect_handler h_v5_connect_;
+    v5_connack_handler h_v5_connack_;
+    v5_publish_handler h_v5_publish_;
+    v5_puback_handler h_v5_puback_;
+    v5_pubrec_handler h_v5_pubrec_;
+    v5_pubrel_handler h_v5_pubrel_;
+    v5_pubcomp_handler h_v5_pubcomp_;
+    v5_subscribe_handler h_v5_subscribe_;
+    v5_suback_handler h_v5_suback_;
+    v5_unsubscribe_handler h_v5_unsubscribe_;
+    v5_unsuback_handler h_v5_unsuback_;
+    v5_disconnect_handler h_v5_disconnect_;
+
+    // original handlers
+    close_handler h_close_;
+    error_handler h_error_;
+    pub_res_sent_handler h_pub_res_sent_;
     serialize_publish_message_handler h_serialize_publish_;
+    serialize_v5_publish_message_handler h_serialize_v5_publish_;
     serialize_pubrel_message_handler h_serialize_pubrel_;
+    serialize_v5_pubrel_message_handler h_serialize_v5_pubrel_;
     serialize_remove_handler h_serialize_remove_;
     pre_send_handler h_pre_send_;
     is_valid_length_handler h_is_valid_length_;
+
     boost::optional<std::string> user_name_;
     boost::optional<std::string> password_;
     Mutex store_mtx_;
@@ -6102,6 +6956,7 @@ private:
     bool disconnect_requested_;
     bool connect_requested_;
     mqtt_message_processed_handler h_mqtt_message_processed_;
+    std::size_t version_;
 };
 
 } // namespace mqtt

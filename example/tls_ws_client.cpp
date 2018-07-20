@@ -8,9 +8,9 @@
 #include <iomanip>
 #include <map>
 
-#include <boost/lexical_cast.hpp>
-
 #include <mqtt_client_cpp.hpp>
+
+#include <boost/lexical_cast.hpp>
 
 int main(int argc, char** argv) {
     if (argc != 4) {

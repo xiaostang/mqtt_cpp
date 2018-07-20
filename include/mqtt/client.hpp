@@ -7,6 +7,8 @@
 #if !defined(MQTT_CLIENT_HPP)
 #define MQTT_CLIENT_HPP
 
+#include <mqtt/variant.hpp> // should be top to configure variant limit
+
 #include <string>
 #include <vector>
 #include <functional>
