@@ -74,7 +74,7 @@ public:
     /**
      * @brief Constructor for client
      */
-    endpoint()
+    endpoint(std::uint8_t version = protocol_version::undetermined)
         :connected_(false),
          mqtt_connected_(false),
          clean_session_(false),
@@ -88,14 +88,15 @@ public:
              (async_handler_t const& func) {
                  async_read_control_packet_type(func);
              }
-         )
+         ),
+         version_(version)
     {}
 
     /**
      * @brief Constructor for server.
      *        socket should have already been connected with another endpoint.
      */
-    endpoint(std::unique_ptr<Socket>&& socket)
+    endpoint(std::unique_ptr<Socket>&& socket, std::uint8_t version = protocol_version::undetermined)
         :socket_(std::move(socket)),
          connected_(true),
          mqtt_connected_(false),
@@ -110,7 +111,8 @@ public:
              (async_handler_t const& func) {
                  async_read_control_packet_type(func);
              }
-         )
+         ),
+         version_(version)
     {}
 
     // MQTT Common handlers
@@ -6956,7 +6958,7 @@ private:
     bool disconnect_requested_;
     bool connect_requested_;
     mqtt_message_processed_handler h_mqtt_message_processed_;
-    std::size_t version_;
+    std::uint8_t version_;
 };
 
 } // namespace mqtt
